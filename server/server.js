@@ -7,11 +7,21 @@ dotenv.config();
 
 const { connectDB } = require("./config/db");
 
-// Connect to database & load associations
-connectDB();
+// Load associations
 require("./models/index");
 
 const app = express();
+
+// Ensure DB is connected before handling any request
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    console.error("DB connection error:", err.message);
+    res.status(500).json({ success: false, message: "Database connection failed" });
+  }
+});
 
 // Middleware
 app.use(cors());
