@@ -1,4 +1,8 @@
 // Vercel Serverless Function entry point
+// Explicit requires so the bundler includes dynamically-loaded packages
+require("pg");
+require("pg-hstore");
+
 let app;
 try {
   app = require("../server/server");
