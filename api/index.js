@@ -1,5 +1,12 @@
 // Vercel Serverless Function entry point
-// Imports the Express app from the server folder and re-exports it
-const app = require("../server/server");
+let app;
+try {
+  app = require("../server/server");
+} catch (err) {
+  // If server fails to load, return a handler that reports the error
+  app = (req, res) => {
+    res.status(500).json({ error: "Server init failed", message: err.message, stack: err.stack });
+  };
+}
 
 module.exports = app;
