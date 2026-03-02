@@ -1,78 +1,58 @@
 const User = require("../models/User");
+const Idea = require("../models/Idea");
 
 // ── GET /api/users/:id ─────────────────────────────────────────
 exports.getUserById = async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select("-password");
-    if (!user)
-      return res
-        .status(404)
-        .json({ success: false, message: "User not found" });
-    res.json({ success: true, user });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
+    const user = await User.findByPk(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found" });
+    const v = user.get({ plain: true }); v._id = v.id;
+    res.json({ success: true, user: v });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
 // ── PUT /api/users/profile ─────────────────────────────────────
 exports.updateProfile = async (req, res) => {
   try {
-    const allowed = [
-      "name",
-      "bio",
-      "skills",
-      "portfolioLinks",
-      "areasOfInterest",
-      "avatar",
-    ];
-    const updates = {};
-    allowed.forEach((field) => {
-      if (req.body[field] !== undefined) updates[field] = req.body[field];
-    });
-
-    const user = await User.findByIdAndUpdate(req.user._id, updates, {
-      new: true,
-    }).select("-password");
-
-    res.json({ success: true, user });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
+    const allowed = ["name", "bio", "skills", "portfolioLinks", "areasOfInterest", "avatar"];
+    const user = await User.findByPk(req.user.id);
+    allowed.forEach((f) => { if (req.body[f] !== undefined) user[f] = req.body[f]; });
+    await user.save();
+    const v = user.get({ plain: true }); v._id = v.id;
+    res.json({ success: true, user: v });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
 // ── PUT /api/users/bookmark/:ideaId ────────────────────────────
 exports.toggleBookmark = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id);
+    const user = await User.findByPk(req.user.id);
     const ideaId = req.params.ideaId;
-    const idx = user.bookmarkedIdeas.indexOf(ideaId);
-
-    if (idx === -1) {
-      user.bookmarkedIdeas.push(ideaId);
-    } else {
-      user.bookmarkedIdeas.splice(idx, 1);
-    }
-
+    let bookmarks = [...(user.bookmarkedIdeas || [])];
+    const idx = bookmarks.indexOf(ideaId);
+    if (idx === -1) { bookmarks.push(ideaId); } else { bookmarks.splice(idx, 1); }
+    user.bookmarkedIdeas = bookmarks;
+    user.changed("bookmarkedIdeas", true);
     await user.save();
-    res.json({
-      success: true,
-      bookmarkedIdeas: user.bookmarkedIdeas,
-      bookmarked: idx === -1,
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
+    res.json({ success: true, bookmarkedIdeas: user.bookmarkedIdeas, bookmarked: idx === -1 });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
 // ── GET /api/users/bookmarks ───────────────────────────────────
 exports.getBookmarks = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).populate({
-      path: "bookmarkedIdeas",
-      populate: { path: "author", select: "name" },
+    const user = await User.findByPk(req.user.id);
+    const bookmarkIds = user.bookmarkedIdeas || [];
+    if (bookmarkIds.length === 0) return res.json({ success: true, data: [] });
+    const ideas = await Idea.findAll({
+      where: { id: bookmarkIds },
+      include: [{ model: User, as: "author", attributes: ["id", "name"] }],
     });
-    res.json({ success: true, data: user.bookmarkedIdeas });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
+    const data = ideas.map((i) => {
+      const v = i.get({ plain: true }); v._id = v.id;
+      if (v.author) v.author._id = v.author.id;
+      return v;
+    });
+    res.json({ success: true, data });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };

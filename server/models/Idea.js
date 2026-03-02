@@ -1,78 +1,97 @@
-const mongoose = require("mongoose");
+const { DataTypes } = require("sequelize");
+const { sequelize } = require("../config/db");
 
-const ideaSchema = new mongoose.Schema(
+const Idea = sequelize.define(
+  "Idea",
   {
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
+    },
     title: {
-      type: String,
-      required: [true, "Title is required"],
-      trim: true,
+      type: DataTypes.STRING,
+      allowNull: false,
     },
     description: {
-      type: String,
-      required: [true, "Description is required"],
+      type: DataTypes.TEXT,
+      allowNull: false,
     },
     category: {
-      type: String,
-      enum: [
+      type: DataTypes.ENUM(
         "Technology",
         "Healthcare",
         "Education",
         "Finance",
         "Environment",
         "Social",
-        "Other",
-      ],
-      default: "Other",
+        "Other"
+      ),
+      defaultValue: "Other",
     },
-    tags: [{ type: String }],
+    tags: {
+      type: DataTypes.JSON,
+      defaultValue: [],
+    },
     stage: {
-      type: String,
-      enum: ["Concept", "Prototype", "MVP", "Scaling"],
-      default: "Concept",
+      type: DataTypes.ENUM("Concept", "Prototype", "MVP", "Scaling"),
+      defaultValue: "Concept",
     },
-    author: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
+    authorId: {
+      type: DataTypes.UUID,
+      allowNull: false,
     },
-    collaborators: [
-      { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    ],
-    upvotes: [
-      { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    ],
-    downvotes: [
-      { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    ],
-    ratings: [
-      {
-        user: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-        score: { type: Number, min: 1, max: 5 },
-      },
-    ],
-    views: { type: Number, default: 0 },
+    collaborators: {
+      type: DataTypes.JSON,
+      defaultValue: [],
+    },
+    upvotes: {
+      type: DataTypes.JSON,
+      defaultValue: [],
+    },
+    downvotes: {
+      type: DataTypes.JSON,
+      defaultValue: [],
+    },
+    ratings: {
+      type: DataTypes.JSON,
+      defaultValue: [],
+    },
+    views: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+    },
     status: {
-      type: String,
-      enum: ["active", "archived", "flagged"],
-      default: "active",
+      type: DataTypes.ENUM("active", "archived", "flagged"),
+      defaultValue: "active",
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    getterMethods: {
+      averageRating() {
+        const r = this.getDataValue("ratings") || [];
+        if (r.length === 0) return 0;
+        const sum = r.reduce((acc, x) => acc + x.score, 0);
+        return (sum / r.length).toFixed(1);
+      },
+      popularityScore() {
+        return (
+          (this.getDataValue("upvotes") || []).length -
+          (this.getDataValue("downvotes") || []).length
+        );
+      },
+    },
+  }
 );
 
-// Virtual: average rating
-ideaSchema.virtual("averageRating").get(function () {
-  if (!this.ratings || this.ratings.length === 0) return 0;
-  const sum = this.ratings.reduce((acc, r) => acc + r.score, 0);
-  return (sum / this.ratings.length).toFixed(1);
-});
+// Helper for frontend compatibility
+Idea.prototype.toSafeJSON = function () {
+  const v = this.get({ plain: true });
+  v._id = v.id;
+  v.averageRating = this.averageRating;
+  v.popularityScore = this.popularityScore;
+  return v;
+};
 
-// Virtual: popularity score (upvotes − downvotes)
-ideaSchema.virtual("popularityScore").get(function () {
-  return (this.upvotes?.length || 0) - (this.downvotes?.length || 0);
-});
-
-ideaSchema.set("toJSON", { virtuals: true });
-ideaSchema.set("toObject", { virtuals: true });
-
-module.exports = mongoose.model("Idea", ideaSchema);
+module.exports = Idea;

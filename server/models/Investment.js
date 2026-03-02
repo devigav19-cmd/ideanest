@@ -1,25 +1,32 @@
-const mongoose = require("mongoose");
+const { DataTypes } = require("sequelize");
+const { sequelize } = require("../config/db");
 
-const investmentSchema = new mongoose.Schema(
+const Investment = sequelize.define(
+  "Investment",
   {
-    investor: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
     },
-    idea: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Idea",
-      required: true,
+    investorId: {
+      type: DataTypes.UUID,
+      allowNull: false,
     },
-    message: { type: String, default: "" },
+    ideaId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+    },
+    message: {
+      type: DataTypes.TEXT,
+      defaultValue: "",
+    },
     status: {
-      type: String,
-      enum: ["pending", "accepted", "rejected"],
-      default: "pending",
+      type: DataTypes.ENUM("pending", "accepted", "rejected"),
+      defaultValue: "pending",
     },
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model("Investment", investmentSchema);
+module.exports = Investment;

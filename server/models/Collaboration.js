@@ -1,30 +1,36 @@
-const mongoose = require("mongoose");
+const { DataTypes } = require("sequelize");
+const { sequelize } = require("../config/db");
 
-const collaborationSchema = new mongoose.Schema(
+const Collaboration = sequelize.define(
+  "Collaboration",
   {
-    idea: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Idea",
-      required: true,
+    id: {
+      type: DataTypes.UUID,
+      defaultValue: DataTypes.UUIDV4,
+      primaryKey: true,
     },
-    requester: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
+    ideaId: {
+      type: DataTypes.UUID,
+      allowNull: false,
     },
-    owner: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
+    requesterId: {
+      type: DataTypes.UUID,
+      allowNull: false,
     },
-    message: { type: String, default: "" },
+    ownerId: {
+      type: DataTypes.UUID,
+      allowNull: false,
+    },
+    message: {
+      type: DataTypes.TEXT,
+      defaultValue: "",
+    },
     status: {
-      type: String,
-      enum: ["pending", "accepted", "rejected"],
-      default: "pending",
+      type: DataTypes.ENUM("pending", "accepted", "rejected"),
+      defaultValue: "pending",
     },
   },
   { timestamps: true }
 );
 
-module.exports = mongoose.model("Collaboration", collaborationSchema);
+module.exports = Collaboration;

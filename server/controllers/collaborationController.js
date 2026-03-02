@@ -1,111 +1,86 @@
 const Collaboration = require("../models/Collaboration");
 const Idea = require("../models/Idea");
 const Notification = require("../models/Notification");
+const User = require("../models/User");
 
 // ── POST /api/collaborations/:ideaId ── Request collaboration ──
 exports.requestCollaboration = async (req, res) => {
   try {
-    const idea = await Idea.findById(req.params.ideaId);
-    if (!idea)
-      return res
-        .status(404)
-        .json({ success: false, message: "Idea not found" });
-
-    if (idea.author.toString() === req.user._id.toString())
-      return res
-        .status(400)
-        .json({ success: false, message: "You cannot collaborate on your own idea" });
-
-    // Check duplicate request
+    const idea = await Idea.findByPk(req.params.ideaId);
+    if (!idea) return res.status(404).json({ success: false, message: "Idea not found" });
+    if (idea.authorId === req.user.id)
+      return res.status(400).json({ success: false, message: "You cannot collaborate on your own idea" });
     const existing = await Collaboration.findOne({
-      idea: idea._id,
-      requester: req.user._id,
-      status: "pending",
+      where: { ideaId: idea.id, requesterId: req.user.id, status: "pending" },
     });
-    if (existing)
-      return res
-        .status(400)
-        .json({ success: false, message: "Request already sent" });
-
+    if (existing) return res.status(400).json({ success: false, message: "Request already sent" });
     const collab = await Collaboration.create({
-      idea: idea._id,
-      requester: req.user._id,
-      owner: idea.author,
+      ideaId: idea.id, requesterId: req.user.id, ownerId: idea.authorId,
       message: req.body.message || "",
     });
-
-    // Notify idea owner
     await Notification.create({
-      recipient: idea.author,
-      sender: req.user._id,
+      recipientId: idea.authorId, senderId: req.user.id,
       type: "collaboration_request",
       message: `${req.user.name} wants to collaborate on "${idea.title}"`,
-      idea: idea._id,
+      ideaId: idea.id,
     });
-
-    res.status(201).json({ success: true, data: collab });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
+    const v = collab.get({ plain: true }); v._id = v.id;
+    res.status(201).json({ success: true, data: v });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
 // ── GET /api/collaborations/my ── Get my received requests ─────
 exports.getMyRequests = async (req, res) => {
   try {
-    const collabs = await Collaboration.find({ owner: req.user._id })
-      .populate("requester", "name avatar email")
-      .populate("idea", "title")
-      .sort("-createdAt");
-    res.json({ success: true, data: collabs });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
+    const collabs = await Collaboration.findAll({
+      where: { ownerId: req.user.id },
+      include: [
+        { model: User, as: "requester", attributes: ["id", "name", "avatar", "email"] },
+        { model: Idea, as: "idea", attributes: ["id", "title"] },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+    const data = collabs.map((c) => {
+      const v = c.get({ plain: true }); v._id = v.id;
+      if (v.requester) v.requester._id = v.requester.id;
+      if (v.idea) v.idea._id = v.idea.id;
+      return v;
+    });
+    res.json({ success: true, data });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
 // ── PUT /api/collaborations/:id ── Accept or Reject ────────────
 exports.updateCollaboration = async (req, res) => {
   try {
-    const collab = await Collaboration.findById(req.params.id);
-    if (!collab)
-      return res
-        .status(404)
-        .json({ success: false, message: "Request not found" });
-
-    if (collab.owner.toString() !== req.user._id.toString())
-      return res
-        .status(403)
-        .json({ success: false, message: "Not authorized" });
-
-    const { status } = req.body; // "accepted" or "rejected"
+    const collab = await Collaboration.findByPk(req.params.id);
+    if (!collab) return res.status(404).json({ success: false, message: "Request not found" });
+    if (collab.ownerId !== req.user.id)
+      return res.status(403).json({ success: false, message: "Not authorized" });
+    const { status } = req.body;
     if (!["accepted", "rejected"].includes(status))
-      return res
-        .status(400)
-        .json({ success: false, message: "Status must be accepted or rejected" });
-
+      return res.status(400).json({ success: false, message: "Status must be accepted or rejected" });
     collab.status = status;
     await collab.save();
-
-    // If accepted, add requester to idea collaborators
     if (status === "accepted") {
-      await Idea.findByIdAndUpdate(collab.idea, {
-        $addToSet: { collaborators: collab.requester },
-      });
+      const idea = await Idea.findByPk(collab.ideaId);
+      if (idea) {
+        const collaborators = [...(idea.collaborators || [])];
+        if (!collaborators.includes(collab.requesterId)) {
+          collaborators.push(collab.requesterId);
+          idea.collaborators = collaborators;
+          idea.changed("collaborators", true);
+          await idea.save();
+        }
+      }
     }
-
-    // Notify requester
     await Notification.create({
-      recipient: collab.requester,
-      sender: req.user._id,
-      type:
-        status === "accepted"
-          ? "collaboration_accepted"
-          : "collaboration_rejected",
+      recipientId: collab.requesterId, senderId: req.user.id,
+      type: status === "accepted" ? "collaboration_accepted" : "collaboration_rejected",
       message: `Your collaboration request was ${status}`,
-      idea: collab.idea,
+      ideaId: collab.ideaId,
     });
-
-    res.json({ success: true, data: collab });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
+    const v = collab.get({ plain: true }); v._id = v.id;
+    res.json({ success: true, data: v });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };

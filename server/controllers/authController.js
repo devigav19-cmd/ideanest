@@ -13,7 +13,7 @@ exports.register = async (req, res) => {
     const { name, email, password, role } = req.body;
 
     // Check duplicate email
-    const exists = await User.findOne({ email });
+    const exists = await User.scope("withPassword").findOne({ where: { email } });
     if (exists)
       return res
         .status(400)
@@ -26,13 +26,13 @@ exports.register = async (req, res) => {
       role: role || "creator",
     });
 
-    const token = generateToken(user._id);
+    const token = generateToken(user.id);
 
     res.status(201).json({
       success: true,
       token,
       user: {
-        _id: user._id,
+        _id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -53,7 +53,7 @@ exports.login = async (req, res) => {
         .status(400)
         .json({ success: false, message: "Please provide email and password" });
 
-    const user = await User.findOne({ email }).select("+password");
+    const user = await User.scope("withPassword").findOne({ where: { email } });
     if (!user)
       return res
         .status(401)
@@ -65,13 +65,13 @@ exports.login = async (req, res) => {
         .status(401)
         .json({ success: false, message: "Invalid credentials" });
 
-    const token = generateToken(user._id);
+    const token = generateToken(user.id);
 
     res.json({
       success: true,
       token,
       user: {
-        _id: user._id,
+        _id: user.id,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -84,5 +84,7 @@ exports.login = async (req, res) => {
 
 // ── GET /api/auth/me ───────────────────────────────────────────
 exports.getMe = async (req, res) => {
-  res.json({ success: true, user: req.user });
+  const u = req.user.get({ plain: true });
+  u._id = u.id;
+  res.json({ success: true, user: u });
 };
